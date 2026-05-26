@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  telegram-send file.pdf [file2.jpg ...]
+  telegram-send --url URL [TEXT]
+  telegram-send --text TEXT
+
+Opens Telegram Desktop's interactive forwarding/share UI. This does not use
+the Telegram Bot API and does not send anything without user confirmation.
+EOF
+}
+
+die() {
+  printf 'telegram-send: %s\n' "$*" >&2
+  exit 1
+}
+
+urlencode() {
+  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1"
+}
+
+telegram_bin() {
+  command -v Telegram 2>/dev/null || command -v telegram-desktop 2>/dev/null || true
+}
+
+try_launch() {
+  set +m
+  "$@" >/dev/null 2>&1 &
+  wait "$!" 2>/dev/null
+}
+
+open_tg_uri() {
+  local uri="$1"
+  if command -v xdg-open >/dev/null 2>&1; then
+    try_launch xdg-open "$uri" || die "failed to open Telegram URI"
+  elif command -v gio >/dev/null 2>&1; then
+    try_launch gio open "$uri" || die "failed to open Telegram URI"
+  else
+    local tg
+    tg="$(telegram_bin)"
+    [[ -n "$tg" ]] || die "Telegram Desktop not found"
+    try_launch "$tg" "$uri" || die "failed to launch Telegram Desktop"
+  fi
+}
+
+file_uri() {
+  python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())' "$1"
+}
+
+validate_files() {
+  local arg abs
+  FILES=()
+  FILE_URIS=()
+  for arg in "$@"; do
+    [[ -e "$arg" ]] || die "file not found: $arg"
+    [[ -f "$arg" ]] || die "not a regular file: $arg"
+    abs="$(realpath "$arg")" || die "cannot resolve path: $arg"
+    FILES+=("$abs")
+    FILE_URIS+=("$(file_uri "$abs")")
+  done
+}
+
+launch_files() {
+  validate_files "$@"
+
+  if command -v gio >/dev/null 2>&1; then
+    if try_launch gio launch org.telegram.desktop.desktop "${FILE_URIS[@]}"; then
+      return 0
+    fi
+    if try_launch gio launch org.telegram.desktop.desktop "${FILES[@]}"; then
+      return 0
+    fi
+  fi
+
+  if command -v kioclient >/dev/null 2>&1; then
+    if try_launch kioclient exec "${FILE_URIS[@]}"; then
+      return 0
+    fi
+    if try_launch kioclient --desktopfile org.telegram.desktop.desktop exec "${FILE_URIS[@]}"; then
+      return 0
+    fi
+  fi
+
+  local tg
+  tg="$(telegram_bin)"
+  [[ -n "$tg" ]] || die "Telegram Desktop not found"
+  try_launch "$tg" -- "${FILES[@]}" || die "failed to launch Telegram Desktop"
+}
+
+if [[ $# -eq 0 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+case "${1:-}" in
+  --url)
+    [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+    url="$2"
+    text="${3:-}"
+    open_tg_uri "tg://msg_url?url=$(urlencode "$url")&text=$(urlencode "$text")"
+    ;;
+  --text)
+    shift
+    [[ $# -ge 1 ]] || { usage >&2; exit 2; }
+    open_tg_uri "tg://msg?text=$(urlencode "$*")"
+    ;;
+  --file)
+    shift
+    [[ $# -ge 1 ]] || { usage >&2; exit 2; }
+    launch_files "$@"
+    ;;
+  --*)
+    usage >&2
+    exit 2
+    ;;
+  *)
+    launch_files "$@"
+    ;;
+esac
