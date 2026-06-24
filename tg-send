@@ -70,8 +70,41 @@ validate_files() {
   done
 }
 
+normalize_file_args() {
+  local -a normalized=()
+  local candidate
+  local i j
+
+  i=1
+  while (( i <= $# )); do
+    candidate="${!i}"
+
+    if [[ -f "$candidate" ]]; then
+      normalized+=("$candidate")
+      ((i++))
+      continue
+    fi
+
+    for (( j = i + 1; j <= $#; j++ )); do
+      candidate+=" ${!j}"
+      if [[ -f "$candidate" ]]; then
+        normalized+=("$candidate")
+        i=$((j + 1))
+        continue 2
+      fi
+    done
+
+    normalized+=("${!i}")
+    ((i++))
+  done
+
+  printf '%s\0' "${normalized[@]}"
+}
+
 launch_files() {
-  validate_files "$@"
+  local -a file_args=()
+  mapfile -d '' -t file_args < <(normalize_file_args "$@")
+  validate_files "${file_args[@]}"
 
   local tg
   tg="$(telegram_bin)"

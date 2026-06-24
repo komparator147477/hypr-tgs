@@ -5,6 +5,7 @@ Open Telegram Desktop's interactive forwarding picker for one or more local file
 ```bash
 tg-send file.pdf
 tg-send file1.pdf "file with spaces.jpg" scan.pdf
+tg-send /home/me/folder with spaces/file.pdf
 ```
 
 Install through `~/.zshrc`:
@@ -15,6 +16,6 @@ tg-send() {
 }
 ```
 
-The script validates that every argument is an existing regular file, resolves
-absolute paths, then tries desktop integration first (`gio`, then KDE tools) and
-falls back to launching Telegram Desktop directly.
+The script validates file paths, including paths that were split on spaces by
+file-manager shell integrations, resolves absolute paths, then launches Telegram
+Desktop's share picker.
