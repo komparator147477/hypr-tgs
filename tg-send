@@ -26,6 +26,14 @@ telegram_bin() {
   command -v Telegram 2>/dev/null || command -v telegram-desktop 2>/dev/null || true
 }
 
+show_telegram_workspace() {
+  # Show only: repeated shares must never toggle an already visible picker off.
+  # The native launch below handles starting Telegram and passing the payload.
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+    hyprctl eval 'if telegram_scratchpad then telegram_scratchpad.show(false) end' >/dev/null 2>&1 || true
+  fi
+}
+
 try_launch() {
   set +m
   "$@" >/dev/null 2>&1 &
@@ -42,13 +50,16 @@ try_launch() {
 open_tg_uri() {
   local uri="$1"
   if command -v xdg-open >/dev/null 2>&1; then
+    show_telegram_workspace
     try_launch xdg-open "$uri" || die "failed to open Telegram URI"
   elif command -v gio >/dev/null 2>&1; then
+    show_telegram_workspace
     try_launch gio open "$uri" || die "failed to open Telegram URI"
   else
     local tg
     tg="$(telegram_bin)"
     [[ -n "$tg" ]] || die "Telegram Desktop not found"
+    show_telegram_workspace
     try_launch "$tg" "$uri" || die "failed to launch Telegram Desktop"
   fi
 }
@@ -110,6 +121,7 @@ launch_files() {
   tg="$(telegram_bin)"
   [[ -n "$tg" ]] || die "Telegram Desktop not found"
 
+  show_telegram_workspace
   if try_launch "$tg" -sendpath "${FILES[@]}"; then
     return 0
   fi
