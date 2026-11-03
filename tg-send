@@ -8,6 +8,8 @@ Usage:
   tg-send --url URL [TEXT]
   tg-send --text TEXT
 
+File paths may also be passed as a quoted newline-separated list from Yazi.
+
 Opens Telegram Desktop's interactive forwarding/share UI. This does not use
 the Telegram Bot API and does not send anything without user confirmation.
 EOF
@@ -82,9 +84,28 @@ validate_files() {
 }
 
 normalize_file_args() {
+  local -a args=()
   local -a normalized=()
-  local candidate
+  local arg candidate
   local i j
+
+  for arg in "$@"; do
+    # Preserve real filenames (even ones containing newlines) before treating
+    # an argument as a list copied from a file manager.
+    if [[ -e "$arg" || "$arg" != *$'\n'* ]]; then
+      args+=("$arg")
+      continue
+    fi
+
+    while IFS= read -r candidate || [[ -n "$candidate" ]]; do
+      # Accept CRLF clipboard lists without changing real filenames.
+      if [[ ! -e "$candidate" ]]; then
+        candidate="${candidate%$'\r'}"
+      fi
+      [[ -n "$candidate" ]] && args+=("$candidate")
+    done <<< "$arg"
+  done
+  set -- "${args[@]}"
 
   i=1
   while (( i <= $# )); do
@@ -109,12 +130,15 @@ normalize_file_args() {
     ((i++))
   done
 
-  printf '%s\0' "${normalized[@]}"
+  if (( ${#normalized[@]} )); then
+    printf '%s\0' "${normalized[@]}"
+  fi
 }
 
 launch_files() {
   local -a file_args=()
   mapfile -d '' -t file_args < <(normalize_file_args "$@")
+  (( ${#file_args[@]} )) || die "no file paths provided"
   validate_files "${file_args[@]}"
 
   local tg
