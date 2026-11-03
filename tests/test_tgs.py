@@ -8,14 +8,15 @@ import subprocess
 import tempfile
 import time
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "tg-send"
+SCRIPT = Path(__file__).resolve().parents[1] / "tgs"
 
 
 class FileArgumentsTest(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="tg-send-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="tgs-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.bin = self.root / "bin"
@@ -29,6 +30,12 @@ class FileArgumentsTest(unittest.TestCase):
         )
         self.stub(
             "Telegram",
+            "import json, os, sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['TG_TEST_LOG']).write_text(json.dumps(sys.argv[1:]))\n",
+        )
+        self.stub(
+            "xdg-open",
             "import json, os, sys\n"
             "from pathlib import Path\n"
             "Path(os.environ['TG_TEST_LOG']).write_text(json.dumps(sys.argv[1:]))\n",
@@ -91,7 +98,7 @@ class FileArgumentsTest(unittest.TestCase):
             self.assertNotIn("permission denied", output)
             self.assertNotIn("no matches found", output)
             self.assertNotIn("command not found", output)
-            self.assertNotIn("tg-send:", output)
+            self.assertNotIn("tgs:", output)
         finally:
             proc.terminate()
             try:
@@ -104,6 +111,39 @@ class FileArgumentsTest(unittest.TestCase):
     def test_separate_arguments(self):
         paths = self.files("first.jpg", "photo (1).jpg", "last.jpg")
         self.assert_shared(self.run_command(*paths), paths)
+
+    def test_explicit_file_mode_handles_leading_dash(self):
+        paths = self.files("-report.pdf")
+        self.assert_shared(self.run_command("--file", "-report.pdf"), paths)
+
+    def test_url_with_optional_text(self):
+        url = "https://example.com/photo?q=hello world&n=1#section"
+        text = "Фото & детали"
+        result = self.run_command("--url", url, text)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = json.loads(self.log.read_text())
+        self.assertEqual(len(args), 1)
+        uri = urlsplit(args[0])
+        self.assertEqual((uri.scheme, uri.netloc), ("tg", "msg_url"))
+        self.assertEqual(parse_qs(uri.query), {"url": [url], "text": [text]})
+
+    def test_text(self):
+        result = self.run_command("--text", "Hello", "мир & #1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        uri = urlsplit(json.loads(self.log.read_text())[0])
+        self.assertEqual((uri.scheme, uri.netloc), ("tg", "msg"))
+        self.assertEqual(parse_qs(uri.query), {"text": ["Hello мир & #1"]})
+
+    def test_usage_and_missing_arguments(self):
+        for args in ((), ("-h",), ("--help",)):
+            with self.subTest(args=args):
+                result = self.run_command(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("tgs FILE", result.stdout)
+        for flag in ("--file", "--url", "--text", "--unknown"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.run_command(flag).returncode, 2)
+        self.assertFalse(self.log.exists())
 
     def test_yazi_multiline_list(self):
         paths = self.files(
@@ -155,28 +195,28 @@ class FileArgumentsTest(unittest.TestCase):
             "20260811_120804.jpg", "20260811_130455.jpg", "20260811_130501.jpg",
             "20260811_130510.jpg",
         )
-        self.run_zsh_paste("tg-send ", "\n".join(paths))
+        self.run_zsh_paste("tgs ", "\n".join(paths))
         self.assertEqual(json.loads(self.log.read_text()), ["-sendpath", *paths])
 
     def test_interactive_zsh_single_path_paste(self):
         paths = self.files("folder with spaces/фото ' [1] $(echo hi) (1).jpg")
-        self.run_zsh_paste("tg-send ", paths[0])
+        self.run_zsh_paste("tgs ", paths[0])
         self.assertEqual(json.loads(self.log.read_text()), ["-sendpath", *paths])
 
     def test_interactive_zsh_crlf_paste(self):
         paths = self.files("first.jpg", "photo (1).jpg")
-        self.run_zsh_paste("tg-send --file ", "\r\n".join(paths) + "\r\n")
+        self.run_zsh_paste("tgs --file ", "\r\n".join(paths) + "\r\n")
         self.assertEqual(json.loads(self.log.read_text()), ["-sendpath", *paths])
 
     def test_zsh_hook_leaves_other_contexts_unchanged(self):
         integration = SCRIPT.with_name("zsh-integration.zsh")
         code = '''
 source "$1"
-for LBUFFER in 'echo ' 'tg-send --text ' 'tg-send "' 'tg-send --url '; do
+for LBUFFER in 'echo ' 'tgs --text ' 'tgs "' 'tgs --url '; do
     RBUFFER=''
     PASTED=$'/tmp/a.jpg\\n/tmp/b (1).jpg'
     original=$PASTED
-    _tg_send_quote_paste
+    _tgs_quote_paste
     [[ $PASTED == "$original" ]] || exit 1
 done
 '''

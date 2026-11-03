@@ -4,9 +4,11 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  tg-send file.pdf [file2.jpg ...]
-  tg-send --url URL [TEXT]
-  tg-send --text TEXT
+  tgs FILE [FILE ...]
+  tgs --file FILE [FILE ...]
+  tgs --url URL [TEXT]
+  tgs --text TEXT
+  tgs -h | --help
 
 File paths may also be passed as a quoted newline-separated list from Yazi.
 
@@ -16,7 +18,7 @@ EOF
 }
 
 die() {
-  printf 'tg-send: %s\n' "$*" >&2
+  printf 'tgs: %s\n' "$*" >&2
   exit 1
 }
 
@@ -77,7 +79,7 @@ validate_files() {
   for arg in "$@"; do
     [[ -e "$arg" ]] || die "file not found: $arg"
     [[ -f "$arg" ]] || die "not a regular file: $arg"
-    abs="$(realpath "$arg")" || die "cannot resolve path: $arg"
+    abs="$(realpath -- "$arg")" || die "cannot resolve path: $arg"
     FILES+=("$abs")
     FILE_URIS+=("$(file_uri "$abs")")
   done

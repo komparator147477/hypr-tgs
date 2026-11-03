@@ -1,7 +1,7 @@
 # Quote file-manager pastes before zsh parses newlines or filename patterns.
-_tg_send_quote_paste() {
+_tgs_quote_paste() {
     emulate -L zsh
-    [[ -z $RBUFFER && $LBUFFER =~ '^[[:blank:]]*tg-send[[:blank:]]+(--file[[:blank:]]+)?$' ]] || return 0
+    [[ -z $RBUFFER && $LBUFFER =~ '^[[:blank:]]*tgs[[:blank:]]+(--file[[:blank:]]+)?$' ]] || return 0
 
     local line
     local -a paths=() quoted=()
@@ -25,10 +25,10 @@ _tg_send_quote_paste() {
     return 0
 }
 
-tg-send() {
+tgs() {
     # %x is the file defining this function, even when sourced elsewhere.
     local script_dir=${${(%):-%x}:A:h}
-    "$script_dir/tg-send" "$@"
+    "$script_dir/tgs" "$@"
 }
 
 autoload -Uz bracketed-paste-magic
@@ -40,7 +40,7 @@ fi
 () {
     local -a hooks=()
     zstyle -a :bracketed-paste-magic paste-finish hooks
-    if (( ! ${hooks[(Ie)_tg_send_quote_paste]} )); then
-        zstyle :bracketed-paste-magic paste-finish "${hooks[@]}" _tg_send_quote_paste
+    if (( ! ${hooks[(Ie)_tgs_quote_paste]} )); then
+        zstyle :bracketed-paste-magic paste-finish "${hooks[@]}" _tgs_quote_paste
     fi
 }
